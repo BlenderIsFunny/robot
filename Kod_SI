@@ -27,7 +27,7 @@
  */
 
 // definicja progu widzenia czujnikow odleglosci
-#define DIST_TRESHOLD 1600//600 //ok 15[cm]
+#define DIST_TRESHOLD 1600//600 //ok 15[cm]Ogarnonć to! jakie wartosci to jakie odległoci
 
 // definicje nazwy czynnosci
 #define STOP 0
@@ -37,31 +37,38 @@
 #define FORWARD_ATACK 4
 #define BACKWARD 5
 #define BACKWARD_LEFT 6
-#define BACKWARD_RIGHR 7
+#define BACKWARD_RIGHT 7
 #define BACKWARD_ATACK 8
 #define ROTATE_LEFT 9
 #define ROTATE_RIGHT 10
+
+#define repetitionMaximum 20
 
 // deklaracje funkcji
 void timer1();
 void countdown();
 void executeAction();
 void selectAction();
+void firstMove();
 
 // wartosc aktuanie wykonywanej czynnosci
 volatile int currentAction = STOP;
-volatile int lastAction = FORWARD_LEFT;
+volatile int suggestedAction = ROTATE_LEFT;
+volatile int repetition = 10;
 
 int main(void) {
 	init();
 	// dawanie znaku zycia
-	rprintf("Reset\r\n");
+	rprintf("Reset\r\n");//czy to potrzebne?
 	// uruchomienie timera
-	timerSchedule(timer1, 1);
+	timerSchedule(timer1, 1);//Ta funkcja przerzuca funkcje w argumencie na inny watek i wykonuje co podany czas - wykorzystac!
 
 	// oczekiwanie na nacisniecie przycosku i odliczanie
 	countdown();
 
+	firstMove();
+	executeAction();
+	waitMs(20);
 	// petla glowna programu
 	for (;;) {
 		// wybor akcji
@@ -69,101 +76,198 @@ int main(void) {
 		// wykonywanie akcji
 		executeAction();
 		// opoznienie
-		if (switchIsOn(SWITCH2)) {waitMs(20);}
-		else {waitMs(50);}
+		//if (switchIsOn(SWITCH2))
+		waitMs(20);
+		//else waitMs(50);
 	}
 }
+/*
+int main(void) {
+	init();
+
+	timerSchedule(selectAction(), 15);
+
+	timerSchedule(executeAction(), 20);
+
+	// oczekiwanie na nacisniecie przycosku i odliczanie
+	countdown();
+}*/
 
 // Funkcja wyboru akcji
+void firstMove()
+{
+	if(switchIsOn(SWITCH1))
+	{
+		if(switchIsOn(SWITCH2))
+		{
+			if(switchIsOn(SWITCH3))currentAction = FORWARD;
+			else currentAction = FORWARD_LEFT;
+		}
+		else currentAction = BACKWARD_RIGHT;
+	}
+	else
+	{
+		if(switchIsOn(SWITCH2))currentAction = FORWARD_RIGHT;
+		else if(switchIsOn(SWITCH3))currentAction = BACKWARD_LEFT;
+		else currentAction = BACKWARD;
+	}
+}
 void selectAction() {
+	repetition++;
 	if(!grdDetected(GRD1) || !grdDetected(GRD2) || !grdDetected(GRD3) || !grdDetected(GRD4))
 	{
+		repetition = 0;
 		if (!grdDetected(GRD1) && !grdDetected(GRD2)){
 			// jesli linia jest z przodu - ucieczka do tylu
 			currentAction = BACKWARD;
-		} else if (!grdDetected(GRD3) && !grdDetected(GRD4)) {
+			suggestedAction = BACKWARD;
+		} else if (!grdDetected(GRD3) && !grdDetected(GRD4)){
 			// jesli linia jest z tylu - ucieczka do przodu
 			currentAction = FORWARD;
+			suggestedAction = FORWARD;
 		} else if (!grdDetected(GRD1)) {
 			// jesli linia jest z przodu po lewej - ucieczka do tylu prawo
-			currentAction = BACKWARD_RIGHR;
+			if(currentAction == FORWARD_RIGHT)currentAction = BACKWARD;
+			else currentAction = BACKWARD_RIGHT;
+			suggestedAction = BACKWARD_RIGHT;
 		} else if (!grdDetected(GRD2)) {
 			// jesli linia jest z przodu po prawej - ucieczka do tylu lewo
-			currentAction = BACKWARD_LEFT;
+			if(currentAction == FORWARD_LEFT)currentAction = BACKWARD;
+			else currentAction = BACKWARD_LEFT;
+			suggestedAction = BACKWARD_LEFT;
 		} else if (!grdDetected(GRD3)) {
 			// jesli linia jest z tylu po lewej - ucieczka do przodu prawo
-			currentAction = FORWARD_RIGHT;
+			if(currentAction == FORWARD_RIGHT)currentAction = FORWARD;
+			else currentAction = FORWARD_RIGHT;
+			suggestedAction = FORWARD_RIGHT;
 		} else if (!grdDetected(GRD4)) {
 			// jesli linia jest z tylu po prawej - ucieczka do przodu lewo
-			currentAction = FORWARD_LEFT;
+			if(currentAction == FORWARD_LEFT)currentAction = FORWARD;
+			else currentAction = FORWARD_LEFT;
+			suggestedAction = FORWARD_LEFT;
+		} else if (!grdDetected(GRD2) && (!grdDetected(GRD4))) {
+			//jeżeli linia jest wykryta przez 2 czujniki z prawej
+            currentAction = BACKWARD_LEFT;
+            suggestedAction = BACKWARD_LEFT;
+		} else if (!grdDetected(GRD1) && (!grdDetected(GRD3))) {
+			//jeżeli linia jest wykryta przez 2 czujniki z lewej
+            currentAction = BACKWARD_RIGHT;
+            suggestedAction = BACKWARD_RIGHT;
 		}
 	}
 
 	if (distValue(DIST1) > DIST_TRESHOLD || distValue(DIST2) > DIST_TRESHOLD /*|| distValue(DIST3) > DIST_TRESHOLD*/)
 	{
+		repetition = 0;
 		if (distValue(DIST1) > DIST_TRESHOLD && distValue(DIST2) > DIST_TRESHOLD) {
 			// jesi przeciwnik jest z przodu na wprost - atak
 			currentAction = FORWARD_ATACK;
+			//suggestedAction = BACKWARD_RIGHT;
 		} else if (distValue(DIST1) > DIST_TRESHOLD) {
 			// jesli przeciwnik jest z przodu po lewej - do przodu na lewo
 			currentAction = FORWARD_LEFT;
-			lastAction = FORWARD_LEFT;
+			suggestedAction = BACKWARD_RIGHT;
 		} else if (distValue(DIST2) > DIST_TRESHOLD) {
 			// jesli przeciwnik jest z przodu po prawej - do przodu na prawo
 			currentAction = FORWARD_RIGHT;
-			lastAction = FORWARD_RIGHT;
-		} else if (distValue(DIST3) > DIST_TRESHOLD) {
+			suggestedAction = BACKWARD_LEFT;
+		} /*else if (distValue(DIST3) > DIST_TRESHOLD) {
 			// jesli przeciwnik jest z tylu - obrot
 			currentAction = ROTATE_LEFT;
+		}*/
+	}
+	if(repetition >= repetitionMaximum)
+	{
+		switch( currentAction )
+		{
+		case FORWARD:
+			//
+			break;
+		case FORWARD_LEFT:
+			suggestedAction = FORWARD_RIGHT;
+			break;
+		case FORWARD_RIGHT:
+			suggestedAction = FORWARD_LEFT;
+			break;
 		}
 	}
 
-	// nie ma ani lini, ani przeciwnika
-	if (currentAction == STOP) {
-		// jesli robot stoi, to podejmuje akcje
-		if (lastAction == FORWARD_LEFT) {
-			currentAction = FORWARD_LEFT;
-		} else {
-			currentAction = FORWARD_RIGHT;
-		}
-	}
+	currentAction = suggestedAction;
 }
-
 // Funkcja wykonuje akcje
 void executeAction() {
-	if (currentAction == STOP) {
+	switch( currentAction )
+	{
+	case STOP:
 		servoStop(SERVO1);
 		servoStop(SERVO2);
-	} else if (currentAction == FORWARD) {
+	    break;
+
+	case FORWARD:
 		servoBackward(SERVO1);
 		servoForward(SERVO2);
-	} else if (currentAction == FORWARD_LEFT) {
+	    break;
+
+	case FORWARD_LEFT:
 		servoStop(SERVO1);
 		servoForward(SERVO2);
-	} else if (currentAction == FORWARD_RIGHT) {
+		waitMs(5);
+		servoBackward(SERVO1);
+		servoForward(SERVO2);
+	    break;
+
+	case FORWARD_RIGHT:
 		servoBackward(SERVO1);
 		servoStop(SERVO2);
-	} else if (currentAction == FORWARD_ATACK) {
+		waitMs(5);
+		servoBackward(SERVO1);
+		servoForward(SERVO2);
+		break;
+
+	case FORWARD_ATACK:
 		servoForward(SERVO2);
 		servoBackward(SERVO1);
-	} else if (currentAction == BACKWARD) {
+		break;
+
+	case BACKWARD:
 		servoBackward(SERVO2);
 		servoForward(SERVO1);
-	} else if (currentAction == BACKWARD_LEFT) {
+		break;
+
+	case BACKWARD_LEFT:
 		servoStop(SERVO1);
 		servoBackward(SERVO2);
-	} else if (currentAction == BACKWARD_RIGHR) {
+		waitMs(5);
+		servoBackward(SERVO2);
+		servoForward(SERVO1);
+		break;
+
+	case BACKWARD_RIGHT:
 		servoForward(SERVO1);
 		servoStop(SERVO2);
-	} else if (currentAction == BACKWARD_ATACK) {
+		waitMs(5);
 		servoBackward(SERVO2);
 		servoForward(SERVO1);
-	} else if (currentAction == ROTATE_LEFT) {
+		break;
+
+	case BACKWARD_ATACK:
+		servoBackward(SERVO2);/*Czy to jest potrzebne?*/
+		servoForward(SERVO1);
+	    break;
+
+	case ROTATE_LEFT:
 		servoBackward(SERVO2);
 		servoBackward(SERVO1);
-	} else if (currentAction == ROTATE_RIGHT) {
-		servoForward(SERVO2);
+	    break;
+
+	case ROTATE_RIGHT:
+	    servoForward(SERVO2);
 		servoForward(SERVO1);
+	    break;
+
+	default:
+
+	    break;
 	}
 }
 
@@ -189,7 +293,7 @@ void timer1() {
 		ledOn(LED9);
 		ledOff(LED10);
 		ledOff(LED11);
-	} else if (currentAction == FORWARD_RIGHT || currentAction == BACKWARD_RIGHR
+	} else if (currentAction == FORWARD_RIGHT || currentAction == BACKWARD_RIGHT
 			|| currentAction == ROTATE_RIGHT) {
 		ledOff(LED9);
 		ledOff(LED10);
@@ -221,7 +325,7 @@ void timer1() {
 			rprintf("BACKWARD\r\n");
 		} else if (currentAction == BACKWARD_LEFT) {
 			rprintf("BACKWARD_LEFT\r\n");
-		} else if (currentAction == BACKWARD_RIGHR) {
+		} else if (currentAction == BACKWARD_RIGHT) {
 			rprintf("BACKWARD_RIGHR\r\n");
 		} else if (currentAction == BACKWARD_ATACK) {
 			rprintf("BACKWARD_ATACK\r\n");
@@ -236,8 +340,7 @@ void timer1() {
 // funkcja oczekuje na nacisniecie przycisku i
 void countdown() {
 	// oczekiwanie na nacisniecie przycisku
-	while (!buttonPressed(BUTTON1) && !buttonPressed(BUTTON2))
-		;
+	while (!buttonPressed(BUTTON1) && !buttonPressed(BUTTON2));
 	// odliczanie
 	rprintf("5... \r\n");
 	ledOn(LED9);
